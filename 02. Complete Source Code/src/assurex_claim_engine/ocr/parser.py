@@ -174,10 +174,54 @@ class DocumentOCRParser:
         if not serial_match:
             serial_match = re.search(r'\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,14}\b', extracted_text)
 
+        # Extended Module VI Extractions: Retailer, Model Number, Product Name, Warranty Duration
+        retailer_match = re.search(
+            r'(?:Retailer|Store|Merchant|Vendor|Seller|Sold By)[:#]?\s*([A-Za-z0-9 &.,\'-]{2,40})',
+            extracted_text,
+            re.IGNORECASE
+        )
+        if not retailer_match:
+            retailer_match = re.search(
+                r'\b(Best Buy|Amazon(?:\.com)?|Walmart|Target|Micro Center|Costco|B&H Photo|Apple Store|Home Depot|Currys|Newegg|Samsung Store|Sony Store|Reliance Digital|Croma|Carrefour)\b',
+                extracted_text,
+                re.IGNORECASE
+            )
+
+        model_match = re.search(
+            r'(?:Model(?: Number| No| #)?|Item (?:No|#)|MOD|MN)[:#]?\s*([A-Z0-9][-A-Z0-9/]{2,20})\b',
+            extracted_text,
+            re.IGNORECASE
+        )
+        if not model_match:
+            model_match = re.search(r'\b(MOD[-_][A-Z0-9]{3,10}|[A-Z]{2,4}[-_]?\d{3,5}[A-Z0-9]*)\b', extracted_text)
+
+        product_match = re.search(
+            r'(?:Product(?: Name)?|Item(?: Description| Name)?|Description|Desc)[:#]?\s*([A-Za-z0-9 &.,\'/+\-]{3,45})',
+            extracted_text,
+            re.IGNORECASE
+        )
+
+        warranty_match = re.search(
+            r'(?:Warranty(?: Period| Duration)?|Coverage)[:#]?\s*(\d{1,2}\s*(?:Months?|Mos?|Years?|Yrs?))\b',
+            extracted_text,
+            re.IGNORECASE
+        )
+
         purchase_date = date_match.group(1) if date_match else None
         invoice_number = invoice_match.group(1) if invoice_match else None
         amount = float(amount_match.group(1)) if amount_match else None
         extracted_serial = serial_match.group(1) if serial_match else None
+
+        retailer_name = retailer_match.group(1).strip() if retailer_match else None
+        if retailer_name:
+            retailer_name = re.split(r'[\r\n]', retailer_name)[0].strip()
+
+        model_number = model_match.group(1).strip() if model_match else None
+        product_name = product_match.group(1).strip() if product_match else None
+        if product_name:
+            product_name = re.split(r'[\r\n]', product_name)[0].strip()
+
+        warranty_period = warranty_match.group(1).strip() if warranty_match else None
 
         return {
             "raw_text": extracted_text,
@@ -185,6 +229,10 @@ class DocumentOCRParser:
             "extracted_invoice_number": invoice_number,
             "extracted_amount": amount,
             "extracted_serial_number": extracted_serial,
+            "extracted_retailer": retailer_name,
+            "extracted_model_number": model_number,
+            "extracted_product_name": product_name,
+            "extracted_warranty_period": warranty_period,
             "extraction_confidence": 0.95 if (is_pdf and extracted_text) else (0.88 if extracted_text else 0.0)
         }
 

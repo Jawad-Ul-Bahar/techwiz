@@ -9,7 +9,19 @@
     <div>
         <div style="color: var(--text-sub); font-size: 0.8rem; font-weight: 600;">CLAIM DOSSIER</div>
         <h1 style="font-size: 1.5rem; font-weight: 700;">{{ claim.claim_id }}</h1>
-        {% if product %}<p style="color:var(--text-sub);">{{ product.product_name }} · {{ product.product_id }} · model {{ claim.model_version or 'n/a' }}</p>{% endif %}
+        {% if product %}
+        <p style="color:var(--text-sub); display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span>{{ product.product_name }} · {{ product.product_id }} · model {{ claim.model_version or 'n/a' }}</span>
+            {% set ext_num = claim.extended_warranty_contract_number or (product.extended_warranty_contract_number if product else '') %}
+            {% set ext_prov = claim.extended_warranty_provider or (product.extended_warranty_provider if product else '') %}
+            {% if ext_num or ext_prov %}
+            <span class="status-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.775rem; padding: 2px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                <svg class="icon" aria-hidden="true" style="width: 12px; height: 12px;"><use href="/static/icons.svg#fa-shield-halved"></use></svg>
+                Extended Warranty: {{ ext_prov or 'Active' }} (Contract #{{ ext_num or 'Recorded' }})
+            </span>
+            {% endif %}
+        </p>
+        {% endif %}
     </div>
     
     <div>
@@ -26,7 +38,12 @@
         {% else %}
             <span class="status-badge status-review" style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">Manual Review Required</span>
         {% endif %}
-        <a class="btn btn-secondary" href="/claims/{{ claim.claim_id }}/report/download" style="margin-left:0.5rem;">Download report</a>
+        <a class="btn btn-secondary" href="/claims/{{ claim.claim_id }}/report/pdf" style="margin-left:0.5rem;" title="Download Official Vector PDF Report">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#fa-file-export"></use></svg> Download PDF
+        </a>
+        <a class="btn btn-secondary" href="/claims/{{ claim.claim_id }}/report/print" target="_blank" style="margin-left:0.25rem;" title="Printable / Browser PDF Export">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#fa-file"></use></svg> Print Report
+        </a>
     </div>
 </div>
 
@@ -76,6 +93,25 @@
     {% for st in status_steps %}
         <span class="{% if claim.status == st %}current{% endif %}">{{ st }}</span>
     {% endfor %}
+</div>
+
+<!-- AI-Generated Narrative Claim Summary Panel (Module xxxii) -->
+<div class="panel full-width" style="margin-bottom: 1.25rem; border-left: 4px solid var(--primary); background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);">
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+            <svg class="icon" aria-hidden="true" style="color: var(--primary);"><use href="/static/icons.svg#fa-wand-magic-sparkles"></use></svg>
+            AI Narrative Claim Summary
+            <span class="status-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.725rem; font-weight: 600; padding: 2px 6px;">Module XXXII</span>
+        </div>
+        <span style="font-size: 0.775rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;">
+            <svg class="icon" aria-hidden="true" style="width: 12px; height: 12px;"><use href="/static/icons.svg#fa-robot"></use></svg> Automated Synthesis
+        </span>
+    </div>
+    <div class="panel-body">
+        <p style="font-size: 0.95rem; line-height: 1.65; color: var(--text-main); margin: 0;">
+            {{ narrative_summary }}
+        </p>
+    </div>
 </div>
 
 <div class="dossier-grid">

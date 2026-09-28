@@ -1,35 +1,22 @@
 {
   "product_category": "electronics",
-  "category_name": "Consumer Electronics & Gadgets",
+  "category_name": "Consumer Electronics",
   "coverage_duration_months": 24,
   "extended_coverage_months": 12,
   "grace_period_days": 15,
   "reporting_deadline_days": 30,
   "covered_faults": [
-    "screen_flicker_defect",
     "motherboard_failure",
-    "battery_charging_failure",
-    "audio_speaker_malfunction",
-    "camera_sensor_defect",
-    "overheating_shutdown",
-    "bluetooth_wifi_card_failure",
-    "button_unresponsive"
+    "screen_flicker_defect"
   ],
   "exclusions": [
-    "liquid_spill_damage",
-    "physical_drop_crack",
-    "unauthorized_repair_attempt",
-    "software_malware_corruption",
-    "normal_cosmetic_wear",
-    "power_surge_external",
-    "stolen_lost_device"
+    "liquid_damage",
+    "physical_damage"
   ],
   "authorized_service_center_required": true,
   "mandatory_documents": [
     "purchase_receipt",
-    "warranty_card",
-    "product_image",
-    "serial_number_photo"
+    "warranty_card"
   ],
   "hard_fail_rules": [
     {

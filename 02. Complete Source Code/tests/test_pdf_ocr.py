@@ -18,6 +18,8 @@ def test_pdf_ocr_extraction_from_bytes():
         "Date of Purchase: 2025-04-12\n"
         "Retailer: Tech World MegaStore\n"
         "Item: UltraBook Pro 15\n"
+        "Model: MOD-9921X\n"
+        "Warranty Duration: 24 Months\n"
         "Serial Number: SN9876543210\n"
         "Total Paid: 899.50\n"
     )
@@ -30,6 +32,10 @@ def test_pdf_ocr_extraction_from_bytes():
 
     assert result["extracted_invoice_number"] == "INV-771234"
     assert result["extracted_purchase_date"] == "2025-04-12"
+    assert result["extracted_retailer"] == "Tech World MegaStore"
+    assert result["extracted_model_number"] == "MOD-9921X"
+    assert result["extracted_product_name"] == "UltraBook Pro 15"
+    assert "24 Months" in (result["extracted_warranty_period"] or "")
     assert result["extracted_serial_number"] == "SN9876543210" or result["extracted_serial_number"] == "9876543210"
     assert result["extracted_amount"] == 899.50
     assert result["extraction_confidence"] == 0.95

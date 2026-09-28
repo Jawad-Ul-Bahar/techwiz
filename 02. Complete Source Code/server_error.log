@@ -206,3 +206,82 @@ Traceback (most recent call last):
                 ^^^^^^^^
 NameError: name 'card_url' is not defined
 
+
+--- 500 ERROR on http://testserver/ at 2026-09-28 02:50:58.542859 ---
+Traceback (most recent call last):
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\middleware\sessions.py", line 91, in __call__
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\routing.py", line 282, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\fastapi\routing.py", line 354, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\anyio\to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\02. Complete Source Code\src\assurex_claim_engine\web\app.py", line 380, in index
+    pending_actions = warranty_alert_items(db, current_user)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\02. Complete Source Code\src\assurex_claim_engine\web\helpers.py", line 183, in warranty_alert_items
+    for product in scoped_products(db, user).all():
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2711, in all
+    return self._iter().all()  # type: ignore
+           ~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\engine\result.py", line 1826, in all
+    return self._allrows()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\engine\result.py", line 587, in _allrows
+    rows = self._fetchall_impl()
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\engine\result.py", line 1733, in _fetchall_impl
+    return self._real_result._fetchall_impl()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\engine\result.py", line 2337, in _fetchall_impl
+    return list(self.iterator)
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\orm\loading.py", line 224, in chunks
+    rows = [proc(row) for row in fetch]
+            ~~~~^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\orm\loading.py", line 1124, in _instance
+    session_identity_map._add_unpresent(state, identitykey)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Abdul Rehman\Desktop\Techwiz\assurex-claim-engine jawad 26\.venv\Lib\site-packages\sqlalchemy\orm\identity.py", line 211, in _add_unpresent
+    self._dict[key] = state
+    ~~~~~~~~~~^^^^^
+MemoryError
+

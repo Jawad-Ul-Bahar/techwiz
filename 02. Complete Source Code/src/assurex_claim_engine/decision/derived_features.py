@@ -45,6 +45,18 @@ def compute_derived_claim_features(raw_claim: dict) -> dict:
         warranty_months = int(raw_w_months) if raw_w_months is not None else cat_default_warranty
     except Exception:
         warranty_months = cat_default_warranty
+
+    has_ext = _parse_bool(claim.get("has_extended_warranty"), default=False)
+    ext_provider = str(claim.get("extended_warranty_provider") or "").strip()
+    ext_contract = str(claim.get("extended_warranty_contract_number") or claim.get("extended_contract_number") or "").strip()
+    try:
+        ext_months = int(claim.get("extended_warranty_duration_months") or 0)
+    except Exception:
+        ext_months = 0
+    if ext_provider or ext_contract:
+        has_ext = True
+
+    effective_warranty_months = warranty_months + (ext_months if has_ext else 0)
         
     user_sn = str(claim.get("user_serial_number") or claim.get("serial_number") or "").strip()
     ocr_sn = str(claim.get("ocr_serial_number") or user_sn).strip()
@@ -63,19 +75,22 @@ def compute_derived_claim_features(raw_claim: dict) -> dict:
             try:
                 w_expiry = datetime.strptime(str(claim["warranty_expiry_date"]).strip(), "%Y-%m-%d")
             except Exception:
-                w_expiry = p_date + timedelta(days=30 * warranty_months)
+                w_expiry = p_date + timedelta(days=30 * effective_warranty_months)
         else:
-            w_expiry = p_date + timedelta(days=30 * warranty_months)
+            w_expiry = p_date + timedelta(days=30 * effective_warranty_months)
             
         product_age_days = (c_date - p_date).days
         remaining_warranty_days = (w_expiry - c_date).days
         reporting_delay_days = (c_date - f_date).days
+        std_expiry = p_date + timedelta(days=30 * warranty_months)
+        standard_remaining_days = (std_expiry - c_date).days
         w_expiry_str = w_expiry.strftime("%Y-%m-%d")
         w_start_str = p_date.strftime("%Y-%m-%d")
     except Exception:
         product_age_days = int(claim.get("product_age_days", 100))
         remaining_warranty_days = int(claim.get("remaining_warranty_days", 200))
         reporting_delay_days = int(claim.get("reporting_delay_days", 5))
+        standard_remaining_days = remaining_warranty_days
         w_expiry_str = str(claim.get("warranty_expiry_date", "2026-12-31"))
         w_start_str = purchase_date_str
 
@@ -133,6 +148,11 @@ def compute_derived_claim_features(raw_claim: dict) -> dict:
         updated["purchase_price"] = 500.0
     updated["retailer"] = str(claim.get("retailer", "Retailer"))
     updated["warranty_duration_months"] = warranty_months
+    updated["has_extended_warranty"] = has_ext
+    updated["extended_warranty_provider"] = ext_provider
+    updated["extended_warranty_contract_number"] = ext_contract
+    updated["extended_warranty_duration_months"] = ext_months
+    updated["standard_remaining_days"] = standard_remaining_days
     updated["warranty_start_date"] = w_start_str
     updated["warranty_expiry_date"] = w_expiry_str
     updated["fault_occurrence_date"] = fault_date_str
@@ -174,10 +194,18 @@ def compute_warranty_status(
     payload.setdefault("fault_occurrence_date", payload.get("purchase_date") or today_str)
     derived = compute_derived_claim_features(payload)
     remaining = int(derived.get("remaining_warranty_days", 0) or 0)
+    std_remaining = int(derived.get("standard_remaining_days", remaining) or remaining)
+    has_ext = derived.get("has_extended_warranty", False)
     if remaining >= alert_days:
-        status = "Active"
+        if has_ext and std_remaining < alert_days:
+            status = "Extended Warranty Active"
+        else:
+            status = "Active"
     elif remaining >= 0:
-        status = "Expiring Soon"
+        if has_ext and std_remaining < 0:
+            status = "Extended Warranty Active"
+        else:
+            status = "Expiring Soon"
     elif remaining >= -int(grace_period_days):
         status = "Grace Period Active"
     else:

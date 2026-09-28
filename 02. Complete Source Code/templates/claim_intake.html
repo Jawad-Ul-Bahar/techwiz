@@ -35,7 +35,15 @@
                     </select>
                 </div>
                 {% if selected_product %}
-                <p style="font-size:0.85rem; color:var(--text-sub);">Using {{ selected_product.product_id }} — {{ selected_product.brand }} {{ selected_product.model_number }} (SN {{ selected_product.serial_number }}).</p>
+                <p style="font-size:0.85rem; color:var(--text-sub); display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                    <span>Using {{ selected_product.product_id }} — {{ selected_product.brand }} {{ selected_product.model_number }} (SN {{ selected_product.serial_number }}).</span>
+                    {% if selected_product.has_extended_warranty or selected_product.extended_warranty_provider %}
+                    <span class="status-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem; padding: 2px 6px; display: inline-flex; align-items: center; gap: 4px;">
+                        <svg class="icon" aria-hidden="true" style="width: 11px; height: 11px;"><use href="/static/icons.svg#fa-shield-halved"></use></svg>
+                        Extended: {{ selected_product.extended_warranty_provider }} (Contract #{{ selected_product.extended_warranty_contract_number or 'N/A' }})
+                    </span>
+                    {% endif %}
+                </p>
                 {% else %}
                 <div class="form-row">
                     <div class="form-group">
@@ -63,7 +71,14 @@
                     <div class="form-group"><label class="form-label">Purchase Price ($)</label><input type="number" step="0.01" min="0" name="purchase_price" class="form-input"></div>
                     <div class="form-group"><label class="form-label">Retailer</label><input type="text" name="retailer" class="form-input"></div>
                 </div>
-                <div class="form-group"><label class="form-label">Warranty months</label><input type="number" min="1" name="warranty_months" class="form-input" value="24"></div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Warranty months</label><input type="number" min="1" name="warranty_months" class="form-input" value="24"></div>
+                    <div class="form-group"><label class="form-label">Extended warranty duration (months)</label><input type="number" min="0" name="extended_warranty_duration_months" class="form-input" value="0"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Extended Warranty Provider (Optional)</label><input type="text" name="extended_warranty_provider" class="form-input" placeholder="e.g. CarePack, SquareTrade" value="{{ draft_claim.extended_warranty_provider if draft_claim else '' }}"></div>
+                    <div class="form-group"><label class="form-label">Extended Contract # (Optional)</label><input type="text" name="extended_warranty_contract_number" class="form-input" placeholder="e.g. EXT-2026-0041" value="{{ draft_claim.extended_warranty_contract_number if draft_claim else '' }}"></div>
+                </div>
                 {% endif %}
             </div>
         </div>

@@ -126,12 +126,21 @@ def product_to_claim_dict(product: Product) -> dict:
         "purchase_price": product.purchase_price,
         "retailer": product.retailer,
         "warranty_duration_months": product.warranty_duration_months,
+        "has_extended_warranty": bool(getattr(product, "has_extended_warranty", False)),
+        "extended_warranty_provider": getattr(product, "extended_warranty_provider", "") or "",
+        "extended_warranty_contract_number": getattr(product, "extended_warranty_contract_number", "") or "",
+        "extended_warranty_duration_months": int(getattr(product, "extended_warranty_duration_months", 0) or 0),
     }
 
 
 def enrich_product(product: Product, alert_days: Optional[int] = None) -> dict:
-    alert_days = int(alert_days if alert_days is not None else get("warranty_alert_days", 30))
     policy = load_policy(product.category)
+    if alert_days is None and policy.get("warranty_alert_days"):
+        try:
+            alert_days = int(policy["warranty_alert_days"])
+        except (ValueError, TypeError):
+            alert_days = None
+    alert_days = int(alert_days if alert_days is not None else get("warranty_alert_days", 30))
     grace = int(policy.get("grace_period_days", 15))
     derived = compute_warranty_status(
         product_to_claim_dict(product),

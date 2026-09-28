@@ -49,3 +49,28 @@ def get_settings() -> dict:
 def get(key: str, default: Any = None) -> Any:
     """Convenience accessor: get_settings()[key] with an optional fallback."""
     return get_settings().get(key, default)
+
+
+def save_setting(key: str, value: Any) -> bool:
+    """Update a single setting in settings.yaml and invalidate the cache."""
+    return update_settings({key: value})
+
+
+def update_settings(updates: dict) -> bool:
+    """Update settings in settings.yaml and invalidate the cache."""
+    path = os.path.normpath(CONFIG_PATH)
+    try:
+        import yaml
+        current = {}
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                current = yaml.safe_load(f) or {}
+        current.update(updates)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(current, f, default_flow_style=False, sort_keys=False)
+        get_settings.cache_clear()
+        return True
+    except Exception as e:
+        print(f"[settings] Warning: could not save settings to {path}: {e}")
+        return False

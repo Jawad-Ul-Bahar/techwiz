@@ -76,6 +76,10 @@ class Product(Base):
     purchase_price = Column(Float, nullable=False)
     retailer = Column(String(100), nullable=False)
     warranty_duration_months = Column(Integer, nullable=False, default=24)
+    has_extended_warranty = Column(Boolean, default=False)
+    extended_warranty_provider = Column(String(100), nullable=True)
+    extended_warranty_contract_number = Column(String(100), nullable=True)
+    extended_warranty_duration_months = Column(Integer, nullable=True, default=0)
     created_at = Column(DateTime, default=_utcnow)
 
     owner = relationship("User", back_populates="products")
@@ -114,6 +118,8 @@ class Claim(Base):
     override_flag = Column(Boolean, default=False)
 
     document_hash = Column(String(100), nullable=True)
+    extended_warranty_provider = Column(String(100), nullable=True)
+    extended_warranty_contract_number = Column(String(100), nullable=True)
     model_version = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
@@ -186,8 +192,24 @@ def migrate_schema():
     statements = []
 
     claim_cols = _table_columns(inspector, "claims")
-    if claim_cols and "model_version" not in claim_cols:
-        statements.append("ALTER TABLE claims ADD COLUMN model_version VARCHAR(20)")
+    if claim_cols:
+        if "model_version" not in claim_cols:
+            statements.append("ALTER TABLE claims ADD COLUMN model_version VARCHAR(20)")
+        if "extended_warranty_provider" not in claim_cols:
+            statements.append("ALTER TABLE claims ADD COLUMN extended_warranty_provider VARCHAR(100) DEFAULT ''")
+        if "extended_warranty_contract_number" not in claim_cols:
+            statements.append("ALTER TABLE claims ADD COLUMN extended_warranty_contract_number VARCHAR(100) DEFAULT ''")
+
+    prod_cols = _table_columns(inspector, "products")
+    if prod_cols:
+        for col, ddl in [
+            ("has_extended_warranty", "ALTER TABLE products ADD COLUMN has_extended_warranty BOOLEAN DEFAULT 0"),
+            ("extended_warranty_provider", "ALTER TABLE products ADD COLUMN extended_warranty_provider VARCHAR(100) DEFAULT ''"),
+            ("extended_warranty_contract_number", "ALTER TABLE products ADD COLUMN extended_warranty_contract_number VARCHAR(100) DEFAULT ''"),
+            ("extended_warranty_duration_months", "ALTER TABLE products ADD COLUMN extended_warranty_duration_months INTEGER DEFAULT 0"),
+        ]:
+            if col not in prod_cols:
+                statements.append(ddl)
 
     doc_cols = _table_columns(inspector, "documents")
     if doc_cols:

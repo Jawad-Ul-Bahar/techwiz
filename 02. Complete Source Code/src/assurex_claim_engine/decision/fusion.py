@@ -89,7 +89,7 @@ class DecisionFusionEngine:
         elif final_decision == "Likely Invalid" and not required_actions:
             required_actions.append("Issue rejection notice specifying non-compliance reasons.")
 
-        return {
+        dossier_data = {
             "claim_id": claim.get("claim_id", "CLM-UNKNOWN"),
             "final_decision": final_decision,
             "comparison": comparison,
@@ -103,6 +103,175 @@ class DecisionFusionEngine:
                 "required_actions": required_actions
             }
         }
+        dossier_data["narrative_summary"] = generate_narrative_summary(claim, dossier=dossier_data)
+        return dossier_data
+
+
+def generate_narrative_summary(claim: Any, product: Any = None, dossier: Dict[str, Any] = None) -> str:
+    """Generate human-readable English paragraph narrative summary (Module xxxii)."""
+    dossier = dossier or {}
+
+    # 1. Claim ID & Product identification
+    if isinstance(claim, dict):
+        claim_id = claim.get("claim_id") or "CLM-PENDING"
+        fault_cat = claim.get("fault_category") or ""
+        status = claim.get("status") or claim.get("final_decision") or "Draft"
+        doc_hash = claim.get("document_hash") or ""
+        py_class = claim.get("python_predicted_class") or ""
+        py_conf = claim.get("python_top_confidence") or 0.0
+        vis_class = claim.get("vision_predicted_class") or ""
+        vis_conf = claim.get("vision_top_confidence") or 0.0
+        consistency = claim.get("consistency_status") or ""
+        final_dec = claim.get("final_decision") or status
+        rev_comments = claim.get("reviewer_comments") or ""
+        claim_dict = claim
+    else:
+        claim_id = getattr(claim, "claim_id", "CLM-PENDING")
+        fault_cat = getattr(claim, "fault_category", "") or ""
+        status = getattr(claim, "status", "") or "Draft"
+        doc_hash = getattr(claim, "document_hash", "") or ""
+        py_class = getattr(claim, "python_predicted_class", "") or ""
+        py_conf = getattr(claim, "python_top_confidence", 0.0) or 0.0
+        vis_class = getattr(claim, "vision_predicted_class", "") or ""
+        vis_conf = getattr(claim, "vision_top_confidence", 0.0) or 0.0
+        consistency = getattr(claim, "consistency_status", "") or ""
+        final_dec = getattr(claim, "final_decision", "") or status
+        rev_comments = getattr(claim, "reviewer_comments", "") or ""
+        claim_dict = dossier.get("claim_dict") or {}
+
+    # Extract comparison / predictions from dossier if not on claim
+    comparison = dossier.get("comparison") or {}
+    if not py_class and comparison.get("python_prediction"):
+        py_class = comparison.get("python_prediction")
+        py_conf = comparison.get("python_confidence", 0.0)
+    if not vis_class and comparison.get("vision_prediction"):
+        vis_class = comparison.get("vision_prediction")
+        vis_conf = comparison.get("vision_confidence", 0.0)
+    if not consistency and comparison.get("consistency_status"):
+        consistency = comparison.get("consistency_status")
+
+    # Resolve product info
+    prod_name = ""
+    brand = ""
+    category = ""
+    if product:
+        prod_name = getattr(product, "product_name", "")
+        brand = getattr(product, "brand", "")
+        category = getattr(product, "category", "")
+    elif isinstance(claim_dict, dict):
+        prod_name = claim_dict.get("product_name", "")
+        brand = claim_dict.get("brand", "")
+        category = claim_dict.get("product_category", "")
+
+    if prod_name:
+        prod_label = prod_name
+    elif brand or category:
+        prod_label = f"{brand} {category}".strip()
+    else:
+        prod_label = "the registered product"
+
+    prod_label = prod_label.strip()
+
+    fault_label = fault_cat.replace("_", " ").title() if fault_cat else "unspecified defect"
+
+    # If claim is still a draft
+    if status == "Draft":
+        return (
+            f"Claim {claim_id} was initiated for {prod_label} regarding {fault_label}. "
+            f"This claim is currently saved as a draft pending complete documentation upload and formal submission "
+            f"for dual-model AI adjudication."
+        )
+
+    # 2. Document & OCR verification
+    has_receipt = claim_dict.get("has_receipt")
+    serial_match = claim_dict.get("serial_match_status") or "Exact"
+
+    if has_receipt is False:
+        doc_part = "Purchase receipt was flagged as missing or unverified."
+    elif serial_match in ["Mismatch", "Contradiction"]:
+        doc_part = "Purchase documentation was processed, but a potential serial number discrepancy was detected."
+    else:
+        doc_part = "Purchase was verified via OCR receipt extraction with valid cryptographic hash integrity."
+
+    # 3. Timeline & Warranty
+    rem_days = claim_dict.get("remaining_warranty_days")
+    warranty_part = ""
+    if rem_days is not None:
+        try:
+            rem_days_int = int(rem_days)
+            if rem_days_int > 30:
+                warranty_part = f"Incident occurred within the active warranty window with {rem_days_int} remaining coverage days."
+            elif rem_days_int > 0:
+                warranty_part = f"Incident occurred inside the warranty expiration alert window with {rem_days_int} days remaining."
+            elif rem_days_int >= -30:
+                warranty_part = f"Incident occurred within the 30-day post-expiration grace period ({abs(rem_days_int)} days elapsed)."
+            else:
+                warranty_part = f"Incident occurred after warranty expiration ({abs(rem_days_int)} days elapsed)."
+        except (ValueError, TypeError):
+            pass
+
+    ext_contract = getattr(claim, "extended_warranty_contract_number", "") or (claim_dict.get("extended_warranty_contract_number") if isinstance(claim_dict, dict) else "")
+    ext_provider = getattr(claim, "extended_warranty_provider", "") or (claim_dict.get("extended_warranty_provider") if isinstance(claim_dict, dict) else "")
+    if not ext_contract and product:
+        ext_contract = getattr(product, "extended_warranty_contract_number", "") or ""
+    if not ext_provider and product:
+        ext_provider = getattr(product, "extended_warranty_provider", "") or ""
+
+    if ext_contract or ext_provider:
+        ext_label = f"contract #{ext_contract}" if ext_contract else "contract"
+        prov_label = f"provided by {ext_provider}" if ext_provider else ""
+        clause = f"{ext_label} ({prov_label})".strip() if prov_label else ext_label
+        warranty_part = f"{warranty_part} Asset is covered under extended warranty {clause}.".strip()
+
+    # 4. Dual-Model Evaluation
+    model_part = ""
+    if py_class and vis_class:
+        try:
+            py_pct = float(py_conf) * 100
+            vis_pct = float(vis_conf) * 100
+            if consistency in ["Strong Match", "Acceptable Match", "Consistent"]:
+                model_part = (
+                    f"Dual-model AI evaluation reached strong consensus: Tabular ML predicted {py_class} ({py_pct:.1f}% confidence) "
+                    f"and Vision Summary model predicted {vis_class} ({vis_pct:.1f}% confidence)."
+                )
+            else:
+                model_part = (
+                    f"Dual-model evaluation flagged an inter-model divergence ({consistency}): Tabular ML scored {py_class} "
+                    f"({py_pct:.1f}%) whereas Vision model scored {vis_class} ({vis_pct:.1f}%)."
+                )
+        except (ValueError, TypeError):
+            pass
+
+    # 5. Rule execution & Decision outcome
+    rule_eval = dossier.get("rule_evaluation") or {}
+    passed_rules = len(rule_eval.get("passed_rules") or [])
+    failed_rules = rule_eval.get("failed_rules") or []
+
+    if failed_rules:
+        fail_desc = ", ".join(r.rstrip(".") for r in failed_rules[:2])
+        rule_part = f"Policy rule evaluation triggered {len(failed_rules)} non-compliance exclusion(s): {fail_desc}."
+    elif passed_rules:
+        rule_part = f"All {passed_rules} policy compliance rules passed verification successfully."
+    else:
+        rule_part = "Standard warranty policy heuristics were applied."
+
+    outcome_label = final_dec or status
+    dec_part = f"The automated engine determination is: {outcome_label}."
+    if rev_comments:
+        dec_part += f" Reviewer remarks: \"{rev_comments}\"."
+
+    sentences = [
+        f"Claim {claim_id} was filed for {prod_label} regarding {fault_label}.",
+        doc_part
+    ]
+    if warranty_part:
+        sentences.append(warranty_part)
+    if model_part:
+        sentences.append(model_part)
+    sentences.append(rule_part)
+    sentences.append(dec_part)
+
+    return " ".join(sentences)
 
 if __name__ == "__main__":
     fusion = DecisionFusionEngine()

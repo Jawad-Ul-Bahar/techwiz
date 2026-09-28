@@ -46,7 +46,7 @@ from assurex_claim_engine.db.database import (
 )
 from assurex_claim_engine.models.tabular_model import TabularClaimClassifier
 from assurex_claim_engine.models.image_classifier import ImageClassifierPipeline
-from assurex_claim_engine.decision.fusion import DecisionFusionEngine
+from assurex_claim_engine.decision.fusion import DecisionFusionEngine, generate_narrative_summary
 from assurex_claim_engine.decision.derived_features import compute_derived_claim_features
 from assurex_claim_engine.decision.contradiction import ContradictionAndDuplicateDetector
 from assurex_claim_engine.rule_engine.evaluator import PolicyRuleEvaluator
@@ -60,7 +60,9 @@ from assurex_claim_engine.web.helpers import (
     can_access_product, FILE_TYPE_MAP, paginate,
 )
 from dataset_generator.generate_summary_cards import render_claim_card
-from config.settings_loader import get
+from config.settings_loader import get, save_setting
+from assurex_claim_engine.reporting.pdf_generator import generate_claim_pdf_report
+
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "assurex-secret-key-change-in-production-2026")
 
@@ -517,12 +519,19 @@ def products_new_submit(
     purchase_price: float = Form(...),
     retailer: str = Form(...),
     warranty_duration_months: int = Form(24),
+    has_extended_warranty: bool = Form(False),
+    extended_warranty_provider: str = Form(""),
+    extended_warranty_contract_number: str = Form(""),
+    extended_warranty_duration_months: int = Form(0),
     current_user: User = Depends(require_role("customer", "service_center")),
     db: Session = Depends(get_db),
 ):
     if purchase_price < 0 or warranty_duration_months < 1:
         _flash(request, "Price cannot be negative and warranty duration must be at least 1 month.", "error")
         return RedirectResponse(url="/products/new", status_code=status.HTTP_303_SEE_OTHER)
+    ext_prov = extended_warranty_provider.strip()
+    ext_num = extended_warranty_contract_number.strip()
+    is_ext = has_extended_warranty or bool(ext_prov or ext_num or extended_warranty_duration_months > 0)
     product_id = next_product_id(db)
     product = Product(
         product_id=product_id,
@@ -536,6 +545,10 @@ def products_new_submit(
         purchase_price=purchase_price,
         retailer=retailer,
         warranty_duration_months=warranty_duration_months,
+        has_extended_warranty=is_ext,
+        extended_warranty_provider=ext_prov,
+        extended_warranty_contract_number=ext_num,
+        extended_warranty_duration_months=extended_warranty_duration_months,
     )
     db.add(product)
     write_audit(db, action="Product Registration", performed_by=current_user.user_id, user_id=current_user.user_id, entity_type="product", entity_id=product_id)
@@ -774,6 +787,109 @@ def document_verify_save(
     return RedirectResponse(url="/documents", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@app.post("/documents/{doc_id}/delete")
+def document_delete(
+    doc_id: str,
+    request: Request,
+    current_user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    doc = scoped_documents(db, current_user).filter(Document.doc_id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    file_path = doc.file_path
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            print(f"[Warn] Could not remove physical file {file_path}: {e}", flush=True)
+
+    write_audit(
+        db,
+        action="Document Delete",
+        performed_by=current_user.user_id,
+        user_id=doc.user_id,
+        entity_type="document",
+        entity_id=doc_id,
+        details={"file_name": doc.file_name, "file_hash": doc.file_hash, "claim_id": doc.claim_id, "product_id": doc.product_id},
+    )
+    db.delete(doc)
+    db.commit()
+    _flash(request, f"Document {doc_id} was successfully deleted.")
+    return RedirectResponse(url="/documents", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/documents/{doc_id}/replace")
+async def document_replace(
+    doc_id: str,
+    request: Request,
+    upload_file: UploadFile = File(...),
+    file_type: Optional[str] = Form(None),
+    current_user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    doc = scoped_documents(db, current_user).filter(Document.doc_id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    contents = await upload_file.read()
+    err = validate_upload(upload_file.filename, len(contents), receipt_only=False)
+    if err:
+        _flash(request, err, "error")
+        return RedirectResponse(url="/documents", status_code=status.HTTP_303_SEE_OTHER)
+
+    old_file_path = doc.file_path
+    old_hash = doc.file_hash
+    if old_file_path and os.path.exists(old_file_path):
+        try:
+            os.remove(old_file_path)
+        except Exception:
+            pass
+
+    save_name = f"{doc_id}_{upload_file.filename}"
+    new_file_path = os.path.join("uploads", save_name)
+    with open(new_file_path, "wb") as f:
+        f.write(contents)
+    
+    new_hash = ocr_parser.compute_file_hash(contents)
+    effective_file_type = file_type or doc.file_type or "purchase_receipt"
+
+    extracted = {}
+    if effective_file_type in ("purchase_receipt", "receipt", "warranty_card"):
+        extracted = ocr_parser.extract_receipt_data(new_file_path)
+
+    dups = find_hash_duplicates(db, new_hash, exclude_doc_id=doc_id)
+
+    doc.file_name = upload_file.filename
+    doc.file_path = new_file_path
+    doc.file_hash = new_hash
+    doc.file_type = effective_file_type
+    doc.extracted_data_json = json.dumps(extracted) if extracted else None
+    doc.verified_at = None
+    doc.verified_by = None
+
+    write_audit(
+        db,
+        action="Document Replace",
+        performed_by=current_user.user_id,
+        user_id=current_user.user_id,
+        entity_type="document",
+        entity_id=doc_id,
+        details={"old_hash": old_hash, "new_hash": new_hash, "duplicates": [d.doc_id for d in dups]},
+    )
+    db.commit()
+
+    if dups:
+        _flash(request, f"Document {doc_id} replaced. Warning: Duplicate SHA-256 matches {len(dups)} other file(s).", "error")
+    else:
+        _flash(request, f"Document {doc_id} successfully replaced and re-processed.")
+
+    if effective_file_type in ("purchase_receipt", "receipt", "warranty_card"):
+        return RedirectResponse(url=f"/documents/{doc_id}/verify", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/documents", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @app.get("/repairs", response_class=HTMLResponse)
 def repairs_list(
     request: Request,
@@ -909,6 +1025,9 @@ def admin_policies(
     exclusions_text = "\n".join(selected_policy.get("exclusions", []))
     mandatory_docs_text = "\n".join(selected_policy.get("mandatory_documents", []))
 
+    global_alert_days = int(get("warranty_alert_days", 30))
+    policy_alert_days = int(selected_policy.get("warranty_alert_days", global_alert_days))
+
     return render(
         request,
         "admin_policies.html",
@@ -918,6 +1037,8 @@ def admin_policies(
             "categories": list(mapping.keys()),
             "selected": selected_cat,
             "policy": selected_policy,
+            "warranty_alert_days": policy_alert_days,
+            "global_alert_days": global_alert_days,
             "covered_faults_text": covered_faults_text,
             "exclusions_text": exclusions_text,
             "mandatory_docs_text": mandatory_docs_text,
@@ -946,6 +1067,11 @@ async def admin_policies_edit(
         policy_json = str(form.get("policy_json", ""))
         try:
             data = json.loads(policy_json)
+            if "warranty_alert_days" in data:
+                try:
+                    save_setting("warranty_alert_days", int(data["warranty_alert_days"]))
+                except Exception:
+                    pass
         except json.JSONDecodeError:
             _flash(request, "Policy JSON is invalid.", "error")
             return RedirectResponse(url=f"/admin/policies?category={category}", status_code=status.HTTP_303_SEE_OTHER)
@@ -968,6 +1094,10 @@ async def admin_policies_edit(
             data["extended_coverage_months"] = int(form.get("extended_coverage_months", 12))
             data["grace_period_days"] = int(form.get("grace_period_days", 15))
             data["reporting_deadline_days"] = int(form.get("reporting_deadline_days", 30))
+            if form.get("warranty_alert_days"):
+                alert_lead = int(form.get("warranty_alert_days", 30))
+                data["warranty_alert_days"] = max(1, min(180, alert_lead))
+                save_setting("warranty_alert_days", data["warranty_alert_days"])
         except (ValueError, TypeError) as num_err:
             _flash(request, f"Invalid number value in policy timelines: {num_err}", "error")
             return RedirectResponse(url=f"/admin/policies?category={category}", status_code=status.HTTP_303_SEE_OTHER)
@@ -1054,8 +1184,8 @@ def admin_export_csv(
     )
 
 
-@app.get("/claims/{claim_id}/report/download")
-def claim_report_download(
+@app.get("/claims/{claim_id}/report/pdf")
+def claim_report_pdf(
     claim_id: str,
     request: Request,
     current_user: User = Depends(require_login),
@@ -1068,33 +1198,105 @@ def claim_report_download(
         raise PermissionDeniedException("Customers can only download their own claim reports.")
     product = db.query(Product).filter(Product.product_id == claim.product_id).first()
     dossier = json.loads(claim.decision_explanation_json) if claim.decision_explanation_json else {}
-    explanation = dossier.get("explanation") or {}
-    lines = [
-        f"# AssureX Claim Report — {claim.claim_id}",
-        "",
-        f"- Product: {product.product_name if product else claim.product_id}",
-        f"- Status: {claim.status}",
-        f"- Final decision: {claim.final_decision}",
-        f"- Model version: {claim.model_version or 'n/a'}",
-        f"- Python: {claim.python_predicted_class} ({claim.python_top_confidence})",
-        f"- Vision: {claim.vision_predicted_class} ({claim.vision_top_confidence})",
-        f"- Consistency: {claim.consistency_status}",
-        "",
-        "## Supporting factors",
-        *[f"- {x}" for x in explanation.get("supporting_factors", []) or ["None"]],
-        "",
-        "## Opposing factors",
-        *[f"- {x}" for x in explanation.get("opposing_factors", []) or ["None"]],
-        "",
-        "## Reviewer comments",
-        claim.reviewer_comments or "None",
-    ]
-    body = "\n".join(lines)
+    narrative_summary = dossier.get("narrative_summary") or generate_narrative_summary(claim, product=product, dossier=dossier)
+    documents = db.query(Document).filter(Document.claim_id == claim_id).all()
+    pdf_bytes = generate_claim_pdf_report(claim, product, dossier, narrative_summary=narrative_summary, documents=documents)
     return StreamingResponse(
-        iter([body]),
-        media_type="text/markdown",
-        headers={"Content-Disposition": f"attachment; filename={claim_id}_report.md"},
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={claim_id}_adjudication_report.pdf"},
     )
+
+
+@app.get("/claims/{claim_id}/report/print", response_class=HTMLResponse)
+def claim_report_print(
+    claim_id: str,
+    request: Request,
+    current_user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    claim = db.query(Claim).filter(Claim.claim_id == claim_id).first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    if current_user.role == "customer" and claim.user_id != current_user.user_id:
+        raise PermissionDeniedException("Customers can only print their own claim reports.")
+    product = db.query(Product).filter(Product.product_id == claim.product_id).first()
+    dossier = json.loads(claim.decision_explanation_json) if claim.decision_explanation_json else {}
+    narrative_summary = dossier.get("narrative_summary") or generate_narrative_summary(claim, product=product, dossier=dossier)
+    documents = db.query(Document).filter(Document.claim_id == claim_id).all()
+    return render(
+        request,
+        "claim_report_printable.html",
+        {
+            "user": current_user,
+            "claim": claim,
+            "product": product,
+            "dossier": dossier,
+            "documents": documents,
+            "narrative_summary": narrative_summary,
+            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        },
+        db=db,
+    )
+
+
+@app.get("/claims/{claim_id}/report/download")
+def claim_report_download(
+    claim_id: str,
+    request: Request,
+    format: str = "pdf",
+    current_user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    claim = db.query(Claim).filter(Claim.claim_id == claim_id).first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    if current_user.role == "customer" and claim.user_id != current_user.user_id:
+        raise PermissionDeniedException("Customers can only download their own claim reports.")
+    product = db.query(Product).filter(Product.product_id == claim.product_id).first()
+    dossier = json.loads(claim.decision_explanation_json) if claim.decision_explanation_json else {}
+    narrative_summary = dossier.get("narrative_summary") or generate_narrative_summary(claim, product=product, dossier=dossier)
+    documents = db.query(Document).filter(Document.claim_id == claim_id).all()
+
+    if format.lower() == "md":
+        explanation = dossier.get("explanation") or {}
+        lines = [
+            f"# AssureX Claim Report — {claim.claim_id}",
+            "",
+            "## Executive Summary",
+            narrative_summary,
+            "",
+            f"- Product: {product.product_name if product else claim.product_id}",
+            f"- Status: {claim.status}",
+            f"- Final decision: {claim.final_decision}",
+            f"- Model version: {claim.model_version or 'n/a'}",
+            f"- Python: {claim.python_predicted_class} ({claim.python_top_confidence})",
+            f"- Vision: {claim.vision_predicted_class} ({claim.vision_top_confidence})",
+            f"- Consistency: {claim.consistency_status}",
+            "",
+            "## Supporting factors",
+            *[f"- {x}" for x in explanation.get("supporting_factors", []) or ["None"]],
+            "",
+            "## Opposing factors",
+            *[f"- {x}" for x in explanation.get("opposing_factors", []) or ["None"]],
+            "",
+            "## Reviewer comments",
+            claim.reviewer_comments or "None",
+        ]
+        body = "\n".join(lines)
+        return StreamingResponse(
+            iter([body]),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f"attachment; filename={claim_id}_report.md"},
+        )
+
+    pdf_bytes = generate_claim_pdf_report(claim, product, dossier, narrative_summary=narrative_summary, documents=documents)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={claim_id}_adjudication_report.pdf"},
+    )
+
 
 
 @app.get("/claims/new", response_class=HTMLResponse)
@@ -1222,6 +1424,10 @@ async def submit_claim(
     purchase_price: float = Form(0),
     retailer: str = Form(""),
     warranty_months: int = Form(24),
+    has_extended_warranty: bool = Form(False),
+    extended_warranty_provider: str = Form(""),
+    extended_warranty_contract_number: str = Form(""),
+    extended_warranty_duration_months: int = Form(0),
     fault_category: str = Form("motherboard_failure"),
     damage_type: str = Form("none"),
     fault_occurrence_date: str = Form(""),
@@ -1279,7 +1485,11 @@ async def submit_claim(
                     purchase_date=purchase_date,
                     purchase_price=purchase_price or 0,
                     retailer=retailer or "Unknown",
-                    warranty_duration_months=warranty_months
+                    warranty_duration_months=warranty_months,
+                    has_extended_warranty=has_extended_warranty or bool(extended_warranty_provider or extended_warranty_contract_number or extended_warranty_duration_months > 0),
+                    extended_warranty_provider=extended_warranty_provider.strip(),
+                    extended_warranty_contract_number=extended_warranty_contract_number.strip(),
+                    extended_warranty_duration_months=extended_warranty_duration_months,
                 )
                 db.add(product)
                 db.flush()
@@ -1360,6 +1570,8 @@ async def submit_claim(
                     final_decision="Draft",
                     decision_explanation_json=json.dumps({"notes": "Claim saved as draft."}),
                     document_hash=file_hash,
+                    extended_warranty_provider=extended_warranty_provider.strip() or getattr(product, "extended_warranty_provider", ""),
+                    extended_warranty_contract_number=extended_warranty_contract_number.strip() or getattr(product, "extended_warranty_contract_number", ""),
                     model_version=str(get("model_version", "v2")),
                 )
                 db.add(db_claim)
@@ -1372,6 +1584,10 @@ async def submit_claim(
                 db_claim.description = description
                 db_claim.status = "Draft"
                 db_claim.final_decision = "Draft"
+                if extended_warranty_provider.strip():
+                    db_claim.extended_warranty_provider = extended_warranty_provider.strip()
+                if extended_warranty_contract_number.strip():
+                    db_claim.extended_warranty_contract_number = extended_warranty_contract_number.strip()
 
             db.flush()
             for pd_item in pending_docs:
@@ -1436,6 +1652,10 @@ async def submit_claim(
             "has_serial_photo": "serial_number_photo" in present_keys,
             "previous_repairs_count": previous_repairs_count,
             "has_unauthorized_repairs": has_unauthorized_repairs,
+            "has_extended_warranty": has_extended_warranty or bool(extended_warranty_provider or extended_warranty_contract_number or extended_warranty_duration_months > 0) or getattr(product, "has_extended_warranty", False),
+            "extended_warranty_provider": extended_warranty_provider.strip() or getattr(product, "extended_warranty_provider", ""),
+            "extended_warranty_contract_number": extended_warranty_contract_number.strip() or getattr(product, "extended_warranty_contract_number", ""),
+            "extended_warranty_duration_months": extended_warranty_duration_months or getattr(product, "extended_warranty_duration_months", 0),
         }
         raw_payload.update(_build_claim_dict_from_product(product, extra, db))
         claim_dict = compute_derived_claim_features(raw_payload)
@@ -1480,6 +1700,8 @@ async def submit_claim(
                 final_decision=final_dec,
                 decision_explanation_json=json.dumps(dossier),
                 document_hash=file_hash,
+                extended_warranty_provider=extra["extended_warranty_provider"],
+                extended_warranty_contract_number=extra["extended_warranty_contract_number"],
                 model_version=model_version,
             )
             db.add(db_claim)
@@ -1500,6 +1722,8 @@ async def submit_claim(
             db_claim.final_decision = final_dec
             db_claim.decision_explanation_json = json.dumps(dossier)
             db_claim.document_hash = file_hash
+            db_claim.extended_warranty_provider = extra["extended_warranty_provider"]
+            db_claim.extended_warranty_contract_number = extra["extended_warranty_contract_number"]
             db_claim.model_version = model_version
 
         db.flush()
@@ -1758,12 +1982,14 @@ def view_claim_dossier(
 
     product = db.query(Product).filter(Product.product_id == claim.product_id).first()
     dossier = json.loads(claim.decision_explanation_json) if claim.decision_explanation_json else {}
+    narrative_summary = dossier.get("narrative_summary") or generate_narrative_summary(claim, product=product, dossier=dossier)
     card_url = f"/uploads/{claim_id}_summary_card.png"
     return render(request, "dossier.html", {
         "user": current_user,
         "claim": claim,
         "product": product,
         "dossier": dossier,
+        "narrative_summary": narrative_summary,
         "card_url": card_url
     }, db=db)
 

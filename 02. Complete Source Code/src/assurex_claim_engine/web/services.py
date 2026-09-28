@@ -141,6 +141,11 @@ def load_policy(category: str) -> dict:
 
 def warranty_info(product: Product, alert_days: Optional[int] = None) -> dict:
     policy = load_policy(product.category)
+    if alert_days is None and policy.get("warranty_alert_days"):
+        try:
+            alert_days = int(policy["warranty_alert_days"])
+        except (ValueError, TypeError):
+            alert_days = None
     alert_days = alert_days if alert_days is not None else int(settings_get("warranty_alert_days", 30))
     grace = int(policy.get("grace_period_days", 15))
     info = compute_warranty_status(

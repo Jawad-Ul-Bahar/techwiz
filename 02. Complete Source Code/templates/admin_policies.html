@@ -85,6 +85,16 @@
                     </select>
                     <small style="color: var(--text-sub); font-size: 0.75rem;">Requires certified service center for prior repairs</small>
                 </div>
+
+                <div>
+                    <label class="form-label" for="warranty_alert_days" style="display: flex; align-items: center; gap: 6px;">
+                        <svg class="icon" aria-hidden="true" style="width: 14px; height: 14px; color: var(--primary);"><use href="/static/icons.svg#fa-bell"></use></svg>
+                        Expiry Alert Lead Time (Days) — Module IX
+                    </label>
+                    <input type="number" id="warranty_alert_days" name="warranty_alert_days" class="form-input" 
+                           value="{{ warranty_alert_days }}" min="1" max="180" required style="width: 100%;">
+                    <small style="color: var(--text-sub); font-size: 0.75rem;">Days prior to expiry when 'Expiring Soon' alert generates for users & dashboard</small>
+                </div>
             </div>
         </div>
     </div>

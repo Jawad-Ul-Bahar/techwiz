@@ -29,7 +29,7 @@
         <label class="form-label">Warranty status</label>
         <select class="form-select" name="warranty_status">
             <option value="">Any</option>
-            {% for st in ['Active', 'Expiring Soon', 'Grace Period Active', 'Expired'] %}
+            {% for st in ['Active', 'Extended Warranty Active', 'Expiring Soon', 'Grace Period Active', 'Expired'] %}
             <option value="{{ st }}" {% if filters.warranty_status == st %}selected{% endif %}>{{ st }}</option>
             {% endfor %}
         </select>
@@ -44,13 +44,21 @@
     <div class="panel">
         <div class="panel-header">
             <div class="panel-title">{{ p.product_name }}</div>
-            <span class="status-badge {% if card.warranty_status == 'Active' %}status-valid{% elif card.warranty_status == 'Expiring Soon' %}status-review{% else %}status-invalid{% endif %}">{{ card.warranty_status }}</span>
+            <span class="status-badge {% if card.warranty_status in ['Active', 'Extended Warranty Active'] %}status-valid{% elif card.warranty_status == 'Expiring Soon' %}status-review{% else %}status-invalid{% endif %}">{{ card.warranty_status }}</span>
         </div>
         <div class="panel-body">
             <div style="font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.75rem;">
                 <div><strong>{{ p.product_id }}</strong> · {{ p.brand }} {{ p.model_number }}</div>
                 <div>SN {{ p.serial_number }} · {{ p.category }}</div>
                 <div>Expires {{ card.warranty_expiry_date }} · {{ card.remaining_warranty_days }} days remaining</div>
+                {% if p.has_extended_warranty or p.extended_warranty_provider %}
+                <div style="margin-top: 4px;">
+                    <span class="status-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.725rem; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px;">
+                        <svg class="icon" aria-hidden="true" style="width: 10px; height: 10px;"><use href="/static/icons.svg#fa-shield-halved"></use></svg>
+                        Extended: {{ p.extended_warranty_provider or 'Active' }} (Contract #{{ p.extended_warranty_contract_number or 'N/A' }})
+                    </span>
+                </div>
+                {% endif %}
             </div>
             <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
                 <a class="btn btn-primary" href="/claims/new?product_id={{ p.product_id }}">File new claim for this product</a>
