@@ -1,0 +1,58 @@
+[project]
+name = "assurex-claim-engine"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Abdullah Murshid", email = "abdullahmurshid931@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "easyocr>=1.7.2",
+    "fastapi>=0.141.1",
+    "jinja2>=3.1.6",
+    "joblib>=1.6.0",
+    "numpy>=2.5.3",
+    "opencv-python>=5.0.0.93",
+    "pandas>=3.0.6",
+    "pillow>=12.3.0",
+    "pydantic>=2.13.5",
+    "python-multipart>=0.0.32",
+    "scikit-learn>=1.9.1",
+    "sqlalchemy>=2.0.54",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "typing-extensions>=4.16.0",
+    "uvicorn>=0.53.0",
+    "xgboost>=3.4.1",
+    "pyyaml>=6.0",
+    "pymupdf>=1.24.0",
+    "itsdangerous>=2.2.0",
+]
+
+[project.scripts]
+# ── Core app ─────────────────────────────────────────────────────────────
+assurex-claim-engine  = "assurex_claim_engine:main"
+
+# ── Pipeline steps ────────────────────────────────────────────────────────
+assurex-init-db       = "assurex_claim_engine._scripts:init_db"
+assurex-gen-dataset   = "assurex_claim_engine._scripts:generate_dataset"
+assurex-gen-cards     = "assurex_claim_engine._scripts:generate_summary_cards"
+assurex-train-tabular = "assurex_claim_engine._scripts:train_tabular"
+assurex-train-vision  = "assurex_claim_engine._scripts:train_vision"
+assurex-gen-report    = "assurex_claim_engine._scripts:generate_report"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
+
+# ── uv settings ───────────────────────────────────────────────────────────
+[tool.uv]
+# Keep the virtual-environment inside the project folder (default behaviour,
+# but explicit is better than implicit).

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Document Vault - AssureX{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+    <div>
+        <h1 style="font-size: 1.5rem; font-weight: 700;">Document vault</h1>
+        <p style="color: var(--text-sub);">Upload receipts and proof files (PDF/JPG/PNG, max 10MB). SHA-256 duplicates are flagged.</p>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header"><div class="panel-title"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#fa-cloud-arrow-up"></use></svg> Upload</div></div>
+    <div class="panel-body">
+        <form action="/documents/upload" method="POST" enctype="multipart/form-data">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Linked product (optional)</label>
+                    <select class="form-select" name="product_id">
+                        <option value="">Unlinked</option>
+                        {% for p in products %}
+                        <option value="{{ p.product_id }}">{{ p.product_id }} · {{ p.product_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Document type</label>
+                    <select class="form-select" name="file_type">
+                        <option value="purchase_receipt">Purchase receipt</option>
+                        <option value="warranty_card">Warranty card</option>
+                        <option value="product_image">Product photo</option>
+                        <option value="serial_number_photo">Serial plate</option>
+                        <option value="damage_photo">Damage photo</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label class="form-label">File</label>
+                <input class="form-input" type="file" name="upload_file" accept=".pdf,.jpg,.jpeg,.png" required>
+            </div>
+            <button class="btn btn-primary" type="submit">Upload &amp; OCR</button>
+        </form>
+    </div>
+</div>
+
+{% if verify_doc %}
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">Verify {{ verify_doc.doc_id }}</div>
+        {% if dup_map.get(verify_doc.doc_id) %}
+        <span class="status-badge status-invalid">Duplicate hash</span>
+        {% endif %}
+    </div>
+    <div class="panel-body">
+        <div class="form-row">
+            <div>
+                {% if verify_doc.file_path.lower().endswith('.pdf') %}
+                    <a class="link" href="/{{ verify_doc.file_path.replace('\\', '/') }}" target="_blank">Open PDF preview</a>
+                {% else %}
+                    <img src="/{{ verify_doc.file_path.replace('\\', '/') }}" alt="preview" style="max-width:100%; border-radius:6px; border:1px solid var(--border);">
+                {% endif %}
+                <div class="document-hash" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <span>SHA-256: <code>{{ verify_doc.file_hash }}</code></span>
+                    <span class="copy-hash-btn" role="button" tabindex="0" data-copy="{{ verify_doc.file_hash }}">
+                        <svg class="icon" aria-hidden="true" style="width:12px;height:12px;"><use href="/static/icons.svg#fa-clipboard-list"></use></svg> Copy Hash
+                    </span>
+                </div>
+            </div>
+            <form action="/documents/{{ verify_doc.doc_id }}/verify" method="POST">
+                <div class="form-group"><label class="form-label">Purchase date</label><input class="form-input" name="purchase_date" value="{{ extracted.get('extracted_purchase_date') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Invoice number</label><input class="form-input" name="invoice_number" value="{{ extracted.get('extracted_invoice_number') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Product name</label><input class="form-input" name="product_name" value="{{ extracted.get('extracted_product_name') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Model number</label><input class="form-input" name="model_number" value="{{ extracted.get('extracted_model_number') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Serial number</label><input class="form-input" name="serial_number" value="{{ extracted.get('extracted_serial_number') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Retailer</label><input class="form-input" name="retailer_name" value="{{ extracted.get('extracted_retailer') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Amount</label><input class="form-input" name="purchase_amount" value="{{ extracted.get('extracted_amount') or '' }}"></div>
+                <div class="form-group"><label class="form-label">Warranty period</label><input class="form-input" name="warranty_period" value="{{ extracted.get('extracted_warranty_period') or '' }}"></div>
+                <button class="btn btn-primary" type="submit" style="margin-top:0.75rem;">Save corrections</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="panel">
+    <div class="panel-header"><div class="panel-title">Explorer</div></div>
+    <div class="panel-body" style="padding:0;">
+        <table class="data-table">
+            <thead>
+                <tr><th>Doc ID</th><th>Type</th><th>Product / Claim</th><th>Hash</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for d in documents %}
+                <tr>
+                    <td>{{ d.doc_id }}</td>
+                    <td>{{ d.file_type }}</td>
+                    <td>{{ d.product_id or '—' }} / {{ d.claim_id or '—' }}</td>
+                    <td>
+                        <span style="font-size:0.75rem; font-family:monospace;" title="{{ d.file_hash }}">{{ (d.file_hash or '')[:12] }}…</span>
+                        <span class="copy-hash-btn" role="button" tabindex="0" data-copy="{{ d.file_hash }}" title="Copy SHA-256 hash" style="padding:2px 6px; font-size:10px; margin-left:4px;">Copy</span>
+                        {% if dup_map.get(d.doc_id) %}<span class="status-badge status-invalid">dup</span>{% endif %}
+                    </td>
+                    <td>
+                        <a class="link" href="/documents/{{ d.doc_id }}/verify">Verify</a>
+                        · <a class="link" href="/{{ d.file_path.replace('\\', '/') }}" target="_blank">Download</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="color:var(--text-sub);">No documents yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% include "components/pagination.html" %}
+{% endblock %}
